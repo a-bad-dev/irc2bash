@@ -129,8 +129,9 @@ class IRC2BASH:
                 with open("/tmp/.command", "r") as f:
                     output = f.read()
                 
-                output = output.strip().split("\n")
+                output = output.strip()
                 print(output)
+                output = output.split("\n")
                 for line in output:
                     IRC2BASH.send(f"PRIVMSG {IRC2BASH.chan} :{line}")
                     time.sleep(0.75)

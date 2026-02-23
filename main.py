@@ -31,6 +31,23 @@ class IRC2BASH:
             time.sleep(60)
             IRC2BASH.send(f"PING :{IRC2BASH.ip}")
 
+    def run_command(command: str) -> None:
+        os.system(f"/bin/bash -c \"{command}\" >/tmp/.command 2>&1")
+
+        try:
+            with open("/tmp/.command", "r") as f:
+                output = f.read()
+                output = output.strip()
+                print(output)
+                output = output.split("\n")
+                for line in output:
+                    IRC2BASH.send(f"PRIVMSG {IRC2BASH.chan} :{line}")
+                    time.sleep(0.75)
+
+        except UnicodeDecodeError:
+            print(f"UnicodeDecodeError: invalid bytes, caused by: {command_noescapes}")
+            IRC2BASH.send(f"PRIVMSG {IRC2BASH.chan} :Invalid bytes in response.")
+
     def receive_messages(sock) -> None:
         while True:
             data = sock.recv(1024)
@@ -125,21 +142,7 @@ class IRC2BASH:
                 command_list = None
 
                 print(f"{channel}: <{username}> {command}")
-                os.system(f"/bin/bash -c \"{command}\" >/tmp/.command 2>&1")
-
-                try:
-                    with open("/tmp/.command", "r") as f:
-                        output = f.read()
-                        output = output.strip()
-                        print(output)
-                        output = output.split("\n")
-                        for line in output:
-                            IRC2BASH.send(f"PRIVMSG {IRC2BASH.chan} :{line}")
-                            time.sleep(0.75)
-
-                except UnicodeDecodeError:
-                    print(f"UnicodeDecodeError: invalid bytes, caused by: {command_noescapes}")
-                    IRC2BASH.send(f"PRIVMSG {IRC2BASH.chan} :Invalid bytes in response.")
+                _thread.start_new_thread(IRC2BASH.run_command, (command,))
 
 if __name__ == "__main__":
     IRC2BASH.main()

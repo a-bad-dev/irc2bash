@@ -88,13 +88,7 @@ class IRC2BASH:
 
             try:
                 message = response[3:]
-                parsed_message = ""
-                for word in message:
-                    parsed_message = f"{parsed_message} {word}"
-
-                message = parsed_message
-                parsed_message = None
-
+                message = " ".join(message)
                 message = message.strip()
                 message = message[1:]
             except Exception:
@@ -135,11 +129,7 @@ class IRC2BASH:
                         case _:
                             command_list.append(letter)
 
-                command = ""
-                for letter in command_list:
-                    command = f"{command}{letter}"
-
-                command_list = None
+                command = "".join(comand_list)
 
                 print(f"{channel}: <{username}> {command}")
                 _thread.start_new_thread(IRC2BASH.run_command, (command,))

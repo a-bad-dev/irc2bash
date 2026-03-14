@@ -11,11 +11,12 @@ import queue
 class Server():
     # Setup the IRC related things such as user details and prefixes
     # This function also sets up the threading events and queues
-    def __init__(self, realname, nickname, channel, command_prefix = "$!", bot_prefix = "$$"):
+    def __init__(self, realname, nickname, channel, command_prefix = "$!", bot_prefix = "$$", opper_nicknames = []):
         print(f"[SERVER/MAINTHREAD] Using Server() on Python3 PID {os.getpid()}")
         self.realname = realname
         self.nickname = nickname
         self.channel = channel
+        self.opper_nicknames = opper_nicknames
 
         # Prefix for commands to execute
         self.command_prefix = command_prefix
@@ -261,7 +262,7 @@ class Server():
         if msg["command"] == "INVITE":
             msg_source = msg["params"][0]
             source_user = msg["prefix"].partition("!~")[0]
-            if source_user == "jcjordyn120":
+            if source_user in self.opper_nicknames:
                 print(f"[RECVTHREAD] Joining channel by user command!")
                 self._msg_q.put(f"JOIN {msg['params'][-1]}\r\n".encode())
 
@@ -310,8 +311,9 @@ class Server():
         self._msg_q.put(f"PRIVMSG {source_channel} :CMD {cmd} exited with returncode {proc.returncode}\r\n".encode())
 
 if __name__ == "__main__":
-    serv = Server("<username>", "<nick>", "<channel>")     #
-    serv.connect("<server IP>", 6667, sock_recvbuf = 8192) # NOTE TO USER: You have to set these values
+    serv = Server("username", "nickname", "##channel", opper_nicknames = ["opperhere"])
+    serv.connect("IP", 6667, sock_recvbuf = 8192)
+
 
     # Allow for the user to send raw IRC messages
     # These bypass the send queue

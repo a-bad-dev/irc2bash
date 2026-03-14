@@ -297,7 +297,8 @@ class Server():
             if msg["message_source"] in self.opper_nicknames:
                 print(f"[RECVTHREAD] Joining channel by opper command from {msg['message_source']}!")
                 self._send_q.put(f"JOIN {msg['params'][-1]}\r\n".encode())
-
+                self.channels.append(msg["params"][-1])
+                
     # This is where we actually run the RCE commands and pipe the output
     # back to IRC.
     #

@@ -201,7 +201,7 @@ class Server():
             params.append(trailing)
 
         # Extract possible user info from prefix
-        if command == "PRIVMSG":
+        if command in ["PRIVMSG", "INVITE"]:
             message_source = prefix.partition("!")[0]
 
             # Technically the target is ourselfs, but I change it to be the other user
@@ -273,8 +273,8 @@ class Server():
 
         # Allow users to add bots to channel, but only if it's me
         if msg["command"] == "INVITE":
-            if msg.source_user in self.opper_nicknames:
-                print(f"[RECVTHREAD] Joining channel by opper command from {msg['source_user']}!")
+            if msg["message_source"] in self.opper_nicknames:
+                print(f"[RECVTHREAD] Joining channel by opper command from {msg['message_source']}!")
                 self._msg_q.put(f"JOIN {msg['params'][-1]}\r\n".encode())
 
     # This is where we actually run the RCE commands and pipe the output

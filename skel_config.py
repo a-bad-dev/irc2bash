@@ -15,5 +15,9 @@ server = {
 bot = {
 	"command_prefix": "$!",
 	"bot_prefix": "$$",
-	"opper_nicknames": ["nicknamehere"]
+	"opper_nicknames": ["nicknamehere"],
+
+	# 512 messages * 512 bytes maximum per message = 262144 bytes max message queue size
+	# Adjust for RAM needs to avoid cat /dev/urandom from causing OOM
+	"message_queue_max_size": 512
 }

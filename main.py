@@ -378,7 +378,8 @@ class Server():
 
                 # Run CMDTHREAD
                 threading.Thread(target = self._handle_command, args = (cmd, msg["target_channel"], )).start()
-            elif msg["params"][-1].startswith(self.bot_prefix):
+                
+            if msg["params"][-1].startswith(self.bot_prefix):
                 # Get rid of the bot prefix
                 command = msg["params"][-1].strip(self.bot_prefix)
 

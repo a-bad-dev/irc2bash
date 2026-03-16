@@ -1,0 +1,17 @@
+[Unit]
+Description=RCE IRC Bot
+After=network-online.target
+
+[Service]
+ExecStart=/root/irc2bash/main.py
+Restart=always
+User=root
+Group=root
+
+# These require a recent version of systemd, but they are useful to avoid the users
+# thrasing your SSD with excessive IO.
+# IOWriteBandwidthMax=/dev/sda 10M
+# IOReadBandwidthMax=/dev/sda 25M
+
+[Install]
+WantedBy=multi-user.target

@@ -6,6 +6,8 @@ Ensure you run this in a sandboxed VM unless you want random people messing with
 
 This also works with sh, zsh, csh, and (probably) fish.
 
+The official channel for this is ##irc2bash on irc.libera.chat. You are welcome to host your own bot with this script there.
+
 # Installing
 
 ## Linux

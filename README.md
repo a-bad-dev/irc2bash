@@ -28,7 +28,7 @@ The important settings are:
 `nickname`: Set this to the nickname of your bot, this is the name you probably want to change. Use `rce-bot` or something similar 
 if unsure.
 
-`channels`: Sdd channels to this list for your bot to join.
+`channels`: Add channels to this list for your bot to join.
 
 `ip`: Set this to the IP or domain name of the IRC server
 
